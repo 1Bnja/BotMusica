@@ -39,10 +39,6 @@ class MusicPlayerLavalink(commands.Cog):
         player = await channel.connect(cls=wavelink.Player)
         player.ctx = ctx  
         
-        if not hasattr(player, "_track_end_connected"):
-            player.on('track_end', self._on_track_end)
-            player._track_end_connected = True
-        await ctx.send(f"Me he unido a {channel.mention}")
 
     @commands.command(name="play")
     async def play(self, ctx, *, search: str):
@@ -76,7 +72,8 @@ class MusicPlayerLavalink(commands.Cog):
         else:
             await ctx.send("✅ Cola vacía. Usa el comando `play` para añadir más canciones.")
 
-    async def _on_track_end(self, player: wavelink.Player, track, reason):
+    @commands.Cog.listener()
+    async def on_wavelink_track_end(self, player: wavelink.Player, track, reason):
         ctx = getattr(player, "ctx", None)
         if ctx:
             await self.play_next(ctx)
