@@ -76,7 +76,7 @@ class MusicPlayerLavalink(commands.Cog):
         else:
             await ctx.send("✅ Cola vacía. Usa el comando `play` para añadir más canciones.")
 
-    async def _on_track_end(self, player: wavelink.Player, track: wavelink.Track, reason):
+    async def _on_track_end(self, player: wavelink.Player, track, reason):
         ctx = getattr(player, "ctx", None)
         if ctx:
             await self.play_next(ctx)
