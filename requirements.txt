@@ -1,4 +1,4 @@
 discord.py==2.3.2
-wavelink==2.5.2
+wavelink==2.6.3
 python-dotenv==1.0.1
 certifi
