@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 import wavelink
 import logging
+from wavelink.payloads import TrackEventPayload
+from wavelink.enums import TrackEventType
 
 logger = logging.getLogger('discord_bot.music_lavalink')
 
@@ -54,29 +56,51 @@ class MusicPlayerLavalink(commands.Cog):
         track = tracks[0]
 
         queue = self.queues.setdefault(guild_id, [])
-        queue.append(track)
+        was_empty = len(queue) == 0  
+        queue.append({"track": track, "ctx": ctx})
         await ctx.send(f"🎶 Añadido a la cola: **{track.title}**")
 
-        if not player.is_playing() and not player.is_paused():
+        if was_empty and not player.is_playing() and not player.is_paused():
             await self.play_next(ctx)
 
-    async def play_next(self, ctx):
-        guild_id = ctx.guild.id
-        player: wavelink.Player = ctx.voice_client
+    async def play_next(self, ctx=None, player=None):
+        if player is None and ctx is not None:
+            player = ctx.voice_client
+        if player is None:
+            return  
+
+        guild_id = player.guild.id if player else (ctx.guild.id if ctx else None)
         queue = self.queues.get(guild_id, [])
         if queue:
-            next_track = queue.pop(0)
-            player.ctx = ctx  
-            await player.play(next_track)
-            await ctx.send(f"▶️ Reproduciendo: **{next_track.title}**")
+            next_item = queue.pop(0)
+            track = next_item["track"]
+            track_ctx = next_item["ctx"]
+            player.ctx = track_ctx
+            await player.play(track)
+            await track_ctx.send(f"▶️ Reproduciendo: **{track.title}** (pedido por {track_ctx.author.mention})")
         else:
-            await ctx.send("✅ Cola vacía. Usa el comando `play` para añadir más canciones.")
+            if ctx:
+                await ctx.send("✅ Cola vacía. Usa el comando `play` para añadir más canciones.")
 
     @commands.Cog.listener()
-    async def on_wavelink_track_end(self, player: wavelink.Player, track, reason):
-        ctx = getattr(player, "ctx", None)
-        if ctx:
-            await self.play_next(ctx)
+    async def on_wavelink_track_end(self, payload: TrackEventPayload):
+        # Solo nos interesa cuando el evento es END
+        if payload.event is not TrackEventType.END:
+            return
+
+        player = payload.player
+        guild_id = player.guild.id
+        queue = self.queues.get(guild_id, [])
+
+        if queue:
+            item = queue.pop(0)
+            track, ctx = item["track"], item["ctx"]
+            player.ctx = ctx
+            await player.play(track)
+            await ctx.send(f"▶️ Reproduciendo: **{track.title}** (pedido por {ctx.author.mention})")
+        else:
+            # Opción: notificar al usuario de que la cola está vacía
+            await player.ctx.send("✅ Cola vacía. Usa `!play <título>` para añadir más canciones.")
 
     @commands.command(name="pause")
     async def pause(self, ctx):
@@ -104,7 +128,8 @@ class MusicPlayerLavalink(commands.Cog):
     async def leave(self, ctx):
         if ctx.voice_client:
             await ctx.voice_client.disconnect()
-            await ctx.send("👋 Desconectado.")
+            self.queues.pop(ctx.guild.id, None)  
+            await ctx.send("👋 Desconectado y cola limpiada.")
 
     @commands.command(name="queue")
     async def queue_cmd(self, ctx):
@@ -113,7 +138,8 @@ class MusicPlayerLavalink(commands.Cog):
         if not queue:
             await ctx.send("La cola está vacía.")
         else:
-            msg = "\n".join(f"{idx+1}. {track.title}" for idx, track in enumerate(queue))
+            msg = "\n".join(f"{idx+1}. {item['track'].title} (por {item['ctx'].author.display_name})"
+                            for idx, item in enumerate(queue))
             await ctx.send(f"🎶 **Cola actual:**\n{msg}")
 
 async def setup(bot):
